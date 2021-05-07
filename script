@@ -1,0 +1,69 @@
+[void][System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms")
+[void][System.Reflection.Assembly]::LoadWithPartialName("System.Drawing")
+[System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms") | out-null
+[System.Reflection.Assembly]::LoadWithPartialName("System.Drawing") | out-null
+$TimeStart = Get-Date
+$TimeEnd = $timeStart.addminutes(360)
+Do
+{
+	$TimeNow = Get-Date
+	if ($TimeNow -ge $TimeEnd)
+	{
+		
+		Unregister-Event -SourceIdentifier click_event -ErrorAction SilentlyContinue
+		Remove-Event click_event -ErrorAction SilentlyContinue
+		[void][System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms")
+		[void][System.Reflection.Assembly]::LoadWithPartialName("System.Drawing")
+		Exit
+	}
+	else
+	{
+		$Balloon = new-object System.Windows.Forms.NotifyIcon
+		$Balloon.Icon = [System.Drawing.SystemIcons]::Information
+		$Balloon.BalloonTipText = "Un reinicio esta pendiente para la instalacion de actualizacones de seguridad. Favor reiniciar lo mas rapido posible."
+		$Balloon.BalloonTipTitle = "Reinicio requerido"
+		$Balloon.BalloonTipIcon = "Warning"
+		$Balloon.Visible = $true;
+		$Balloon.ShowBalloonTip(20000);
+		$Balloon_MouseOver = [System.Windows.Forms.MouseEventHandler]{ $Balloon.ShowBalloonTip(20000) }
+		$Balloon.add_MouseClick($Balloon_MouseOver)
+		Unregister-Event -SourceIdentifier click_event -ErrorAction SilentlyContinue
+		Register-ObjectEvent $Balloon BalloonTipClicked -sourceIdentifier click_event -Action {
+			Add-Type -AssemblyName Microsoft.VisualBasic
+			
+			If ([Microsoft.VisualBasic.Interaction]::MsgBox('Desea reiniciar el equipo en este momento?', 'YesNo,MsgBoxSetForeground,Question', 'Aviso del sistema') -eq "NO")
+			{ }
+			else
+			{
+				shutdown -r -f
+			}
+			
+		} | Out-Null
+		
+		Wait-Event -timeout 7200 -sourceIdentifier click_event > $null
+		Unregister-Event -SourceIdentifier click_event -ErrorAction SilentlyContinue
+		$Balloon.Dispose()
+	}
+
+}
+Until ($TimeNow -ge $TimeEnd)
+
+
+
+$pendingReboot = @(
+    @{
+        Name = 'Reboot Pending Status: '
+        Test = { Test-Path ''}
+    }
+    @{
+        Name = 'Reboot Required by Windows Update: '
+        Test = { Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired'}
+    })
+$computername = "ComputerName"
+$session = New-PSSession -Computer $computername
+foreach ($test in $pendingReboot) {
+    $result = Invoke-Command -Session $session -ScriptBlock $test.Test
+    $test.Name + $result
+}
+
+powershell.exe "set-Item 'HKLM:SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired'"
